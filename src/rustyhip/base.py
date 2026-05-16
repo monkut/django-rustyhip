@@ -93,8 +93,8 @@ class Database:
     paramstyle = "qmark"
 
     @staticmethod
-    def connect(endpoint: str, timeout: float = 30.0, **_: Any) -> RustyhipConnection:
-        return RustyhipConnection(endpoint=endpoint, timeout=timeout)
+    def connect(endpoint: str, timeout: float = 30.0, auth_token: str = "", **_: Any) -> RustyhipConnection:
+        return RustyhipConnection(endpoint=endpoint, timeout=timeout, auth_token=auth_token)
 
     @staticmethod
     def register_converter(*_: Any, **__: Any) -> None:
@@ -112,9 +112,10 @@ class Database:
 class RustyhipConnection:
     """Mimics just enough of sqlite3.Connection for Django's SQLite backend."""
 
-    def __init__(self, endpoint: str, timeout: float = 30.0) -> None:
+    def __init__(self, endpoint: str, timeout: float = 30.0, auth_token: str = "") -> None:
         self.endpoint = endpoint.rstrip("/")
         self.timeout = timeout
+        self.auth_token = auth_token
         self.closed = False
         # Django sets isolation_level to None to opt into manual tx mode. We
         # honor reads/writes of the attribute but don't act on it.
@@ -287,10 +288,13 @@ class RustyhipCursor:
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload, cls=_RustyhipJSONEncoder).encode("utf-8")
+        headers: dict[str, str] = {"content-type": "application/json"}
+        if self.conn.auth_token:
+            headers["authorization"] = f"Bearer {self.conn.auth_token}"
         req = urllib.request.Request(  # noqa: S310  (endpoint is operator-configured)
             f"{self.conn.endpoint}/sql",
             data=body,
-            headers={"content-type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
@@ -441,14 +445,15 @@ class DatabaseWrapper(sqlite3_base.DatabaseWrapper):
     def get_connection_params(self) -> dict[str, Any]:
         conf = self.settings_dict
         options = conf.get("OPTIONS") or {}
-        endpoint = options.get("endpoint") or options.get("ENDPOINT")
+        endpoint = conf.get("HOST") or options.get("endpoint") or options.get("ENDPOINT")
         if not endpoint:
             raise ImproperlyConfigured(
-                "django-rustyhip requires DATABASES['default']['OPTIONS']['endpoint'] (e.g. 'http://localhost:9000')."
+                "django-rustyhip requires DATABASES[...]['HOST'] set to the rustyhip endpoint URL (e.g. 'http://localhost:9000')."
             )
         return {
             "endpoint": endpoint,
             "timeout": float(options.get("timeout", 30.0)),
+            "auth_token": conf.get("PASSWORD") or "",
         }
 
     def get_new_connection(self, conn_params: dict[str, Any]) -> RustyhipConnection:

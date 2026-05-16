@@ -29,11 +29,29 @@ uv add --editable /path/to/django-rustyhip
 DATABASES = {
     "default": {
         "ENGINE": "rustyhip",
-        "NAME": "rustyhip",          # logical DB name, informational only
-        "OPTIONS": {
-            "endpoint": "http://localhost:9000",  # rustyhip Lambda URL
-            "timeout": 30,                          # HTTP request timeout (seconds)
-        },
+        "NAME": "rustyhip",                    # logical DB name, informational only
+        "HOST": "http://localhost:9000",        # rustyhip Lambda URL
+        "PASSWORD": os.environ.get("RUSTYHIP_AUTH_TOKEN", ""),  # bearer token (optional)
+    }
+}
+```
+
+`OPTIONS["timeout"]` (seconds, default `30`) can be added to tune the HTTP request timeout.
+
+**Backward-compatible:** `OPTIONS["endpoint"]` still works if `HOST` is not set.
+
+**Using environment variables (recommended for deployed apps):**
+
+```python
+# settings.py
+import os
+
+DATABASES = {
+    "default": {
+        "ENGINE": "rustyhip",
+        "NAME": "rustyhip",
+        "HOST": os.environ["RUSTYHIP_ENDPOINT"],        # e.g. https://abc123.execute-api.us-west-2.amazonaws.com/dev
+        "PASSWORD": os.environ.get("RUSTYHIP_AUTH_TOKEN", ""),  # bearer token
     }
 }
 ```
