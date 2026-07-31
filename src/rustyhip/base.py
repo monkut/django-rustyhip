@@ -325,7 +325,13 @@ class RustyhipCursor:
     def _ingest(self, data: dict[str, Any]) -> None:
         columns = data.get("columns") or []
         rows_raw = data.get("rows") or []
-        self._rows = [tuple(row.get(col) for col in columns) for row in rows_raw]
+        # Rows arrive as positional arrays (`rows_format=arrays`) so duplicate
+        # column names from JOINs survive (monkut/rustyhip#29). Older servers
+        # ignore the field and send name-keyed objects — fall back, accepting
+        # their duplicate-column collapse.
+        self._rows = [
+            tuple(row) if isinstance(row, list) else tuple(row.get(col) for col in columns) for row in rows_raw
+        ]
         self._row_iter = iter(self._rows)
         self.description = [(name, None, None, None, None, None, None) for name in columns] if columns else None
         # Default to `readonly = False` when the server omits the flag — a
@@ -360,7 +366,8 @@ def _is_transaction_stmt(sql: str) -> bool:
 
 
 def _build_payload(sql: str, params: Iterable[Any] | None) -> dict[str, Any]:
-    return {"sql": sql, "params": list(params) if params is not None else []}
+    # `rows_format=arrays` requests positional rows — see `_ingest`.
+    return {"sql": sql, "params": list(params) if params is not None else [], "rows_format": "arrays"}
 
 
 def _convert_format_to_qmark(sql: str) -> str:
