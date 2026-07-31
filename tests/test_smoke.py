@@ -120,3 +120,34 @@ def test_features_disable_transactions_and_in_memory_db() -> None:
     assert DatabaseFeatures.can_share_in_memory_db is False
     assert DatabaseFeatures.uses_savepoints is False
     assert DatabaseFeatures.atomic_transactions is False
+
+
+def _make_cursor():
+    from rustyhip.base import RustyhipConnection
+
+    return RustyhipConnection(endpoint="http://example.invalid", timeout=1.0).cursor()
+
+
+def test_build_payload_requests_positional_rows() -> None:
+    """monkut/rustyhip#29: objects-format rows collapse duplicate column names."""
+    from rustyhip.base import _build_payload
+
+    payload = _build_payload("SELECT 1", None)
+    assert payload["rows_format"] == "arrays"
+    assert payload["params"] == []
+
+
+def test_ingest_positional_rows_preserve_duplicate_column_names() -> None:
+    """monkut/rustyhip#29: `SELECT p.id, k.id FROM ... JOIN ...` must yield both values."""
+    cur = _make_cursor()
+    cur._ingest({"columns": ["id", "id"], "rows": [[1, 7]], "readonly": True})
+    assert cur._rows == [(1, 7)]
+    assert cur.description is not None
+    assert [d[0] for d in cur.description] == ["id", "id"]
+
+
+def test_ingest_falls_back_to_name_keyed_object_rows() -> None:
+    """Older rustyhip servers ignore `rows_format` and send objects."""
+    cur = _make_cursor()
+    cur._ingest({"columns": ["a", "b"], "rows": [{"a": 1, "b": 2}], "readonly": True})
+    assert cur._rows == [(1, 2)]
